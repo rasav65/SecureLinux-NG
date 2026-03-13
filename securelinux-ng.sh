@@ -74,8 +74,8 @@ Usage:
 
 Modes:
   --check           Read-only analysis of current state
-  --apply           Framework apply mode (skeleton only)
-  --restore         Framework restore mode (skeleton only)
+  --apply           Apply configured hardening modules
+  --restore         Restore from manifest/backups
   --report          Print framework report JSON
 
 Options:
@@ -1094,6 +1094,10 @@ validate_args() {
         die "--dry-run допустим только вместе с --apply"
     fi
 
+    if [[ -n "$RESTORE_MANIFEST" && "$MODE" != "restore" ]]; then
+        die "--manifest допустим только вместе с --restore"
+    fi
+
     if [[ -n "$CONFIG_FILE" ]] && [[ ! -f "$CONFIG_FILE" ]]; then
         die "Файл конфига не найден: $CONFIG_FILE"
     fi
@@ -1263,6 +1267,15 @@ path = pathlib.Path(sys.argv[1])
 def split_lines(s):
     return [x for x in s.splitlines() if x.strip()]
 
+fstec_items = [
+    {"item": "2.1.2", "status": "partial", "restore": "managed-file", "module": "ssh_root_login"},
+    {"item": "2.2.1", "status": "partial", "restore": "managed-file+group", "module": "pam_wheel"},
+    {"item": "2.2.2", "status": "partial", "restore": "managed-file", "module": "sudo_policy"},
+    {"item": "2.3.1", "status": "partial", "restore": "metadata-snapshot", "module": "fs_critical_files"},
+    {"item": "2.3.3", "status": "partial", "restore": "metadata-snapshot", "module": "cron_targets"},
+    {"item": "2.3.5", "status": "partial", "restore": "metadata-snapshot", "module": "systemd_targets"},
+]
+
 data = {
     "version": sys.argv[2],
     "profile": sys.argv[3],
@@ -1284,6 +1297,15 @@ data = {
     "requires_confirmed_policy": split_lines(sys.argv[16]),
     "warnings": split_lines(sys.argv[17]),
     "errors": split_lines(sys.argv[18]),
+    "fstec_items": fstec_items,
+    "fstec_summary": {
+        "implemented_items": len(fstec_items),
+        "partial": sum(1 for x in fstec_items if x["status"] == "partial"),
+        "done": sum(1 for x in fstec_items if x["status"] == "done"),
+        "restore_managed_file": sum(1 for x in fstec_items if x["restore"] == "managed-file"),
+        "restore_managed_file_group": sum(1 for x in fstec_items if x["restore"] == "managed-file+group"),
+        "restore_metadata_snapshot": sum(1 for x in fstec_items if x["restore"] == "metadata-snapshot"),
+    },
 }
 path.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding='utf-8')
 PYJSON
@@ -1306,6 +1328,9 @@ print_report_stdout() {
         echo "requires_confirmed_policy: ${#POLICY_GATES[@]}"
         echo "warnings: ${#WARNINGS[@]}"
         echo "errors: ${#ERRORS[@]}"
+        echo "fstec_items: 6"
+        echo "fstec_partial: 6"
+        echo "fstec_done: 0"
         return 0
     fi
 
@@ -1328,6 +1353,11 @@ print(f"podman: {env['has_podman']}")
 print(f"kubernetes: {env['has_kubernetes']}")
 for key in ("safe", "risky", "skipped", "requires_confirmed_policy", "warnings", "errors"):
     print(f"{key}: {len(data.get(key, []))}")
+summary = data.get("fstec_summary", {})
+if summary:
+    print(f"fstec_items: {summary.get('implemented_items', 0)}")
+    print(f"fstec_partial: {summary.get('partial', 0)}")
+    print(f"fstec_done: {summary.get('done', 0)}")
 PYJSON
 }
 
