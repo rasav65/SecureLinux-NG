@@ -1,3 +1,16 @@
+## [16.0.0] - 2026-03-14
+
+### Added
+- framework skeleton in `securelinux-ng.sh`
+- config examples in `examples/`
+- basic `syntax` and `smoke` tests
+- expanded `docs/architecture.md`
+- strict initial `docs/fstec-mapping.md`
+
+### Fixed
+- dry-run summary output without reading a non-existent report file
+- smoke test now uses a local writable state directory
+
 # CHANGELOG
 
 ## 16.0.0
