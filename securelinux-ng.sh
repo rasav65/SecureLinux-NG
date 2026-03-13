@@ -39,6 +39,9 @@ PAM_WHEEL_LINE="auth required pam_wheel.so use_uid group=wheel"
 SUDO_POLICY_DROPIN="/etc/sudoers.d/60-securelinux-ng-policy"
 SUDO_POLICY_CONTENT=$'# Managed by SecureLinux-NG\n%wheel ALL=(ALL:ALL) ALL\n'
 
+SYSCTL_KERNEL_DROPIN="/etc/sysctl.d/60-securelinux-ng-kernel.conf"
+SYSCTL_KERNEL_CONTENT=$'# Managed by SecureLinux-NG\nkernel.dmesg_restrict = 1\nkernel.kptr_restrict = 2\nnet.core.bpf_jit_harden = 2\n'
+
 RESTORE_MANIFEST=""
 RESTORE_SOURCE_MANIFEST=""
 
@@ -424,6 +427,91 @@ record_sudo_command_check_results() {
         add_safe "2.3.4 sudo command paths checked: total=$total ok=$ok risky=$risky"
     else
         add_risky "2.3.4 sudo command paths checked: total=$total ok=$ok risky=$risky"
+    fi
+}
+
+sysctl_kernel_check_module() {
+    python3 - <<'PYJSON'
+import subprocess
+
+targets = {
+    "kernel.dmesg_restrict": "1",
+    "kernel.kptr_restrict": "2",
+    "net.core.bpf_jit_harden": "2",
+}
+
+ok = 0
+risky = 0
+for key, expected in targets.items():
+    try:
+        value = subprocess.check_output(["sysctl", "-n", key], text=True).strip()
+    except Exception as e:
+        print(f"RISK\t{key}\tread_failed:{e}")
+        risky += 1
+        continue
+
+    if value == expected:
+        ok += 1
+    else:
+        risky += 1
+        print(f"RISK\t{key}\texpected={expected},actual={value}")
+
+print(f"SUMMARY\t{len(targets)}\t{ok}\t{risky}")
+PYJSON
+}
+
+record_sysctl_kernel_check_results() {
+    local total="$1"
+    local ok="$2"
+    local risky="$3"
+    if [[ "$risky" == "0" ]]; then
+        add_safe "2.4 sysctl kernel protections checked: total=$total ok=$ok risky=$risky"
+    else
+        add_risky "2.4 sysctl kernel protections checked: total=$total ok=$ok risky=$risky"
+    fi
+}
+
+apply_sysctl_kernel_module() {
+    if (( DRY_RUN == 1 )); then
+        log "[DRY-RUN] mkdir -p '/etc/sysctl.d'"
+        if [[ -f "$SYSCTL_KERNEL_DROPIN" ]]; then
+            log "[DRY-RUN] backup '$SYSCTL_KERNEL_DROPIN' -> '$STATE_DIR/$(basename "$SYSCTL_KERNEL_DROPIN").bak-$TIMESTAMP'"
+        fi
+        log "[DRY-RUN] write '$SYSCTL_KERNEL_DROPIN' with kernel.dmesg_restrict=1, kernel.kptr_restrict=2, net.core.bpf_jit_harden=2"
+        log "[DRY-RUN] sysctl --system"
+        add_skipped "2.4 dry-run: sysctl kernel protections would be enforced"
+        return 0
+    fi
+
+    mkdir -p /etc/sysctl.d
+
+    if [[ -f "$SYSCTL_KERNEL_DROPIN" ]]; then
+        local backup_path="$STATE_DIR/$(basename "$SYSCTL_KERNEL_DROPIN").bak-$TIMESTAMP"
+        cp -a "$SYSCTL_KERNEL_DROPIN" "$backup_path"
+        record_manifest_backup "$SYSCTL_KERNEL_DROPIN" "$backup_path"
+    fi
+
+    local existed_before=0
+    [[ -e "$SYSCTL_KERNEL_DROPIN" ]] && existed_before=1 || true
+
+    printf '%s' "$SYSCTL_KERNEL_CONTENT" > "$SYSCTL_KERNEL_DROPIN"
+
+    if sysctl --system >/dev/null 2>&1; then
+        (( existed_before == 0 )) && record_manifest_created_file "$SYSCTL_KERNEL_DROPIN"
+        record_manifest_modified_file "$SYSCTL_KERNEL_DROPIN"
+        record_manifest_apply_report "2.4 enforced via $SYSCTL_KERNEL_DROPIN"
+        add_safe "2.4 kernel sysctl protections enforced via drop-in: $SYSCTL_KERNEL_DROPIN"
+    else
+        add_error "2.4 sysctl --system failed after writing $SYSCTL_KERNEL_DROPIN"
+        record_manifest_warning "2.4 sysctl --system failed after writing $SYSCTL_KERNEL_DROPIN"
+        return 1
+    fi
+}
+
+restore_sysctl_kernel_module() {
+    restore_file_from_manifest "$SYSCTL_KERNEL_DROPIN"
+    if [[ -f "$SYSCTL_KERNEL_DROPIN" ]]; then
+        sysctl --system >/dev/null 2>&1 || add_warning "restore: sysctl --system failed after restoring $SYSCTL_KERNEL_DROPIN"
     fi
 }
 
@@ -1282,7 +1370,7 @@ PYJSON
 require_cmds() {
     local missing=()
     local cmd
-    for cmd in bash python3 stat uname grep awk date mkdir cat systemctl visudo; do
+    for cmd in bash python3 stat uname grep awk date mkdir cat systemctl visudo sysctl; do
         command -v "$cmd" >/dev/null 2>&1 || missing+=("$cmd")
     done
     (( ${#missing[@]} == 0 )) || die "Отсутствуют обязательные команды: ${missing[*]}"
@@ -1555,6 +1643,9 @@ fstec_items = [
     {"item": "2.3.1", "status": "partial", "restore": "metadata-snapshot", "module": "fs_critical_files"},
     {"item": "2.3.2", "status": "partial", "restore": "policy-gated-detect-only", "module": "runtime_paths"},
     {"item": "2.3.4", "status": "partial", "restore": "policy-gated-detect-only", "module": "sudo_command_paths"},
+    {"item": "2.4.1", "status": "partial", "restore": "managed-file", "module": "kernel_dmesg_restrict"},
+    {"item": "2.4.2", "status": "partial", "restore": "managed-file", "module": "kernel_kptr_restrict"},
+    {"item": "2.4.8", "status": "partial", "restore": "managed-file", "module": "kernel_bpf_jit_harden"},
     {"item": "2.3.3", "status": "partial", "restore": "metadata-snapshot", "module": "cron_targets"},
     {"item": "2.3.5", "status": "partial", "restore": "metadata-snapshot", "module": "systemd_targets"},
 ]
@@ -1611,8 +1702,8 @@ print_report_stdout() {
         echo "requires_confirmed_policy: ${#POLICY_GATES[@]}"
         echo "warnings: ${#WARNINGS[@]}"
         echo "errors: ${#ERRORS[@]}"
-        echo "fstec_items: 8"
-        echo "fstec_partial: 8"
+        echo "fstec_items: 11"
+        echo "fstec_partial: 11"
         echo "fstec_done: 0"
         return 0
     fi
@@ -1673,6 +1764,17 @@ run_check_mode() {
                 ;;
         esac
     done < <(check_sudo_command_paths_module)
+    while IFS=$'	' read -r kind a b c; do
+        [[ -n "${kind:-}" ]] || continue
+        case "$kind" in
+            SUMMARY)
+                record_sysctl_kernel_check_results "$a" "$b" "$c"
+                ;;
+            RISK)
+                add_risky "2.4 sysctl key: $a reason=$b"
+                ;;
+        esac
+    done < <(sysctl_kernel_check_module)
     check_cron_targets_module
     check_systemd_unit_targets_module
     ensure_state_dir
@@ -1692,6 +1794,7 @@ run_apply_mode() {
     apply_fs_critical_files_module
     apply_runtime_paths_module
     apply_sudo_command_paths_module
+    apply_sysctl_kernel_module
     apply_cron_targets_module
     apply_systemd_unit_targets_module
 
@@ -1708,6 +1811,7 @@ run_restore_mode() {
     restore_ssh_root_login_module
     restore_pam_wheel_module
     restore_sudo_policy_module
+    restore_sysctl_kernel_module
     restore_fs_critical_files_module
     restore_cron_targets_module
     restore_systemd_unit_targets_module
