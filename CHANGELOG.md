@@ -23,6 +23,7 @@
 - extend restore to `2.3.1`, `2.3.3`, `2.3.5` using metadata snapshots
 - fix `record_manifest_backup` call in systemd permissions module
 - switch metadata restore snapshots to machine-readable `MODE/UID/GID` format with fallback for legacy snapshots
+- add writable fallback `STATE_DIR` for non-root `check/report/restore` runs
 
 ### Fixed
 - dry-run summary output without reading a non-existent report file

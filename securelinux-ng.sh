@@ -1211,12 +1211,37 @@ run_preflight() {
 }
 
 ensure_state_dir() {
+    local original_state_dir="$STATE_DIR"
+    local fallback_state_dir="$SCRIPT_DIR/.securelinux-ng-state"
+
     if (( DRY_RUN == 1 )); then
         log "[DRY-RUN] mkdir -p '$STATE_DIR'"
         return 0
     fi
-    mkdir -p "$STATE_DIR"
-    chmod 700 "$STATE_DIR"
+
+    if mkdir -p "$STATE_DIR" 2>/dev/null; then
+        chmod 700 "$STATE_DIR" 2>/dev/null || true
+        return 0
+    fi
+
+    case "$MODE" in
+        check|report|restore)
+            add_warning "STATE_DIR недоступен: $STATE_DIR; используется fallback: $fallback_state_dir"
+            STATE_DIR="$fallback_state_dir"
+            mkdir -p "$STATE_DIR" || die "Не удалось создать fallback STATE_DIR: $STATE_DIR"
+            chmod 700 "$STATE_DIR" 2>/dev/null || true
+
+            case "$REPORT_FILE" in
+                "$original_state_dir"/*) REPORT_FILE="$STATE_DIR/$(basename "$REPORT_FILE")" ;;
+            esac
+            case "$MANIFEST_FILE" in
+                "$original_state_dir"/*) MANIFEST_FILE="$STATE_DIR/$(basename "$MANIFEST_FILE")" ;;
+            esac
+            ;;
+        *)
+            die "Не удалось создать STATE_DIR: $STATE_DIR"
+            ;;
+    esac
 }
 
 manifest_init() {
