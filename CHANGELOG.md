@@ -20,6 +20,8 @@
 - `2.3.5`: add initial systemd unit/drop-in ownership/perms module for `/etc/systemd/system`
 - add basic restore flow for managed SSH/PAM/sudo files and created group `wheel`
 - add `--manifest FILE` support for restore
+- extend restore to `2.3.1`, `2.3.3`, `2.3.5` using metadata snapshots
+- fix `record_manifest_backup` call in systemd permissions module
 
 ### Fixed
 - dry-run summary output without reading a non-existent report file

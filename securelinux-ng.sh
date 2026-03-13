@@ -306,8 +306,77 @@ restore_sudo_policy_module() {
     restore_file_from_manifest "$SUDO_POLICY_DROPIN"
 }
 
-restore_unhandled_metadata_modules_notice() {
-    add_warning "restore: automatic rollback for 2.3.1/2.3.3/2.3.5 is not implemented yet; only metadata snapshots were recorded"
+restore_read_stat_field() {
+    local meta_file="$1"
+    local key="$2"
+    python3 - "$meta_file" "$key" <<'PYJSON'
+import sys, pathlib, re
+path = pathlib.Path(sys.argv[1])
+key = sys.argv[2]
+text = path.read_text(encoding='utf-8', errors='replace')
+patterns = {
+    "access": r"Access:\s*\((\d+)/",
+    "uid": r"Uid:\s*\(\s*(\d+)/",
+    "gid": r"Gid:\s*\(\s*(\d+)/",
+}
+m = re.search(patterns[key], text)
+print(m.group(1) if m else "")
+PYJSON
+}
+
+restore_metadata_from_stat_snapshot() {
+    local target="$1"
+    local backup
+    local mode uid gid
+
+    backup="$(restore_lookup_backup "$target")"
+    if [[ -z "$backup" || ! -f "$backup" ]]; then
+        add_warning "restore: no metadata snapshot for $target"
+        return 0
+    fi
+
+    mode="$(restore_read_stat_field "$backup" access)"
+    uid="$(restore_read_stat_field "$backup" uid)"
+    gid="$(restore_read_stat_field "$backup" gid)"
+
+    if [[ -z "$mode" || -z "$uid" || -z "$gid" ]]; then
+        add_warning "restore: failed to parse metadata snapshot $backup for $target"
+        return 0
+    fi
+
+    if [[ ! -e "$target" ]]; then
+        add_warning "restore: target missing for metadata restore: $target"
+        return 0
+    fi
+
+    chown "${uid}:${gid}" "$target"
+    chmod "$mode" "$target"
+    add_safe "restore: restored metadata for $target from snapshot $backup"
+}
+
+restore_fs_critical_files_module() {
+    local f
+    for f in "${FS_CRITICAL_FILES[@]}"; do
+        restore_metadata_from_stat_snapshot "$f"
+    done
+}
+
+restore_cron_targets_module() {
+    local spec path
+    for spec in "${CRON_CRITICAL_TARGETS[@]}"; do
+        path="$(cron_target_path "$spec")"
+        restore_metadata_from_stat_snapshot "$path"
+    done
+}
+
+restore_systemd_unit_targets_module() {
+    local item path kind
+    while IFS= read -r item; do
+        [[ -n "$item" ]] || continue
+        path="${item%:*}"
+        kind="${item##*:}"
+        restore_metadata_from_stat_snapshot "$path"
+    done < <(systemd_unit_candidates)
 }
 
 fs_expected_mode() {
@@ -613,7 +682,7 @@ apply_systemd_unit_one() {
 
     backup_path="$STATE_DIR/$(basename "$path").meta-$TIMESTAMP.txt"
     stat "$path" > "$backup_path"
-    record_manifest_backup "$backup_path"
+    record_manifest_backup "$path" "$backup_path"
 
     chown root:root "$path"
     chmod "$exp_mode" "$path"
@@ -1275,7 +1344,9 @@ run_restore_mode() {
     restore_ssh_root_login_module
     restore_pam_wheel_module
     restore_sudo_policy_module
-    restore_unhandled_metadata_modules_notice
+    restore_fs_critical_files_module
+    restore_cron_targets_module
+    restore_systemd_unit_targets_module
 
     write_report
     print_report_stdout

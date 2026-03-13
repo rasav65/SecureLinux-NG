@@ -2,13 +2,15 @@
 
 ## Текущий этап
 
-На текущем этапе `--restore` работает только для управляемых файлов и группы, для которых SecureLinux-NG уже ведёт достаточно данных в manifest.
-
-Поддерживается:
-- SSH drop-in `/etc/ssh/sshd_config.d/60-securelinux-ng-root-login.conf`
-- PAM-файл `/etc/pam.d/su`
-- sudoers drop-in `/etc/sudoers.d/60-securelinux-ng-policy`
-- удаление группы `wheel`, если она была создана самим SecureLinux-NG
+На текущем этапе `--restore` работает для:
+- managed SSH drop-in `/etc/ssh/sshd_config.d/60-securelinux-ng-root-login.conf`
+- managed sudoers drop-in `/etc/sudoers.d/60-securelinux-ng-policy`
+- PAM-файла `/etc/pam.d/su`
+- группы `wheel`, если она была создана самим SecureLinux-NG
+- metadata restore для:
+  - `/etc/passwd`, `/etc/group`, `/etc/shadow`
+  - стандартных cron targets
+  - targets в `/etc/systemd/system`
 
 ## Источник manifest
 
@@ -25,13 +27,17 @@
 - `created_files`
 - `created_groups`
 
-## Что пока не откатывается автоматически
+## Metadata restore
 
-Для модулей:
-- `2.3.1`
-- `2.3.3`
-- `2.3.5`
+Для модулей `2.3.1`, `2.3.3`, `2.3.5` используется упрощённая модель:
+- при apply сохраняется `stat`-snapshot в текстовый файл;
+- при restore из snapshot извлекаются:
+  - mode
+  - uid
+  - gid
+- затем выполняются `chown uid:gid` и `chmod mode`.
 
-сейчас сохраняются только metadata snapshots (`stat`-снимки), но нет полноценного автоматического восстановления прежнего owner/group/mode.
+## Ограничения
 
-Это ограничение текущего этапа и оно должно явно отражаться в report.
+Это ещё не идеальная restore-модель, потому что она зависит от успешного разбора `stat`-вывода.
+Но это уже полноценнее, чем простое warning-сообщение без попытки отката.
