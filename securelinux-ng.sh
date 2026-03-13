@@ -510,7 +510,7 @@ run_preflight() {
     (( HAS_PODMAN == 1 )) && add_policy_gate "Обнаружен Podman: проверять совместимость namespace/cgroup/sysctl"
     (( HAS_K8S == 1 )) && add_policy_gate "Обнаружен Kubernetes node: kernel/network hardening применять только по политике"
 
-    add_skipped "Hardening-модули пока не реализованы: это только framework-скелет"
+    add_skipped "Часть hardening-модулей ещё не реализована: framework находится в активной разработке"
 }
 
 ensure_state_dir() {
