@@ -27,6 +27,7 @@
 - add `fstec_items` and `fstec_summary` to generated report output
 - extend smoke test with `--restore --manifest` path
 - add smoke assertions for FSTEC summary in stdout
+- `2.3.2`: add runtime executable/library permissions scan with policy-gated detect-only apply
 
 ### Fixed
 - dry-run summary output without reading a non-existent report file

@@ -51,7 +51,7 @@
 | Пункт | Статус | Код/блок | Проверка | Комментарий |
 |---|---|---|---|---|
 | 2.3.1. Корректные права для `/etc/passwd`, `/etc/group`, `/etc/shadow` | partial | `check_fs_critical_files_module()` / `apply_fs_critical_files_module()` | `--check`, `--apply`, `stat`, проверка mode/owner/group | Реализован первый FS-permissions-модуль; добавлен metadata restore по stat-snapshot |
-| 2.3.2. Корректные права для исполняемых файлов и библиотек запущенных процессов | not started | — | — | В `NG` ещё нет runtime-files permissions-модуля |
+| 2.3.2. Корректные права для исполняемых файлов и библиотек запущенных процессов | partial | `check_runtime_paths_module()` / `apply_runtime_paths_module()` | `--check`, сканирование `/proc/*/exe` и `/proc/*/maps`, проверка `go-w` на файлах и родительских директориях | Реализован detect-only модуль; автоматический chmod для runtime paths пока policy-gated |
 | 2.3.3. Корректные права для файлов/команд из cron | partial | `check_cron_targets_module()` / `apply_cron_targets_module()` | `--check`, `--apply`, `stat`, проверка mode/owner/group | Реализован начальный cron ownership/perms-модуль для стандартных cron targets; добавлен metadata restore по stat-snapshot |
 | 2.3.4. Корректные права/владельцы для файлов, выполняемых через sudo | not started | — | — | В `NG` ещё нет sudo executable ownership/perms-модуля |
 | 2.3.5. Корректные права для стартовых скриптов и `.service` | partial | `check_systemd_unit_targets_module()` / `apply_systemd_unit_targets_module()` | `--check`, `--apply`, `stat`, проверка mode/owner/group | Реализован начальный systemd ownership/perms-модуль для targets в `/etc/systemd/system`; добавлен metadata restore по stat-snapshot |
