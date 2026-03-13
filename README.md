@@ -65,3 +65,9 @@ SecureLinux-NG — новый проект безопасной настройк
   - правило: `auth required pam_wheel.so use_uid group=wheel`
   - создаётся группа: `wheel` (если отсутствует)
   - поддержка: `--check`, `--apply`, `--apply --dry-run`
+
+- `2.3.1` — контроль владельца/группы/прав для критичных файлов:
+  - `/etc/passwd` → `root:root`, `0644`
+  - `/etc/group` → `root:root`, `0644`
+  - `/etc/shadow` → `root:shadow`, `0640`
+  - поддержка: `--check`, `--apply`, `--apply --dry-run`

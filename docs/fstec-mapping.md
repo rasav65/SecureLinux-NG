@@ -50,7 +50,7 @@
 
 | Пункт | Статус | Код/блок | Проверка | Комментарий |
 |---|---|---|---|---|
-| 2.3.1. Корректные права для `/etc/passwd`, `/etc/group`, `/etc/shadow` | not started | — | — | В `NG` ещё нет FS-permissions-модуля |
+| 2.3.1. Корректные права для `/etc/passwd`, `/etc/group`, `/etc/shadow` | partial | `check_fs_critical_files_module()` / `apply_fs_critical_files_module()` | `--check`, `--apply`, `stat`, проверка mode/owner/group | Реализован первый FS-permissions-модуль; restore-обработчик ещё не добавлен |
 | 2.3.2. Корректные права для исполняемых файлов и библиотек запущенных процессов | not started | — | — | В `NG` ещё нет runtime-files permissions-модуля |
 | 2.3.3. Корректные права для файлов/команд из cron | not started | — | — | В `NG` ещё нет cron ownership/perms-модуля |
 | 2.3.4. Корректные права/владельцы для файлов, выполняемых через sudo | not started | — | — | В `NG` ещё нет sudo executable ownership/perms-модуля |

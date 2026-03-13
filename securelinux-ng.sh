@@ -36,6 +36,8 @@ PAM_WHEEL_BLOCK_BEGIN="# BEGIN SecureLinux-NG 2.2.1"
 PAM_WHEEL_BLOCK_END="# END SecureLinux-NG 2.2.1"
 PAM_WHEEL_LINE="auth required pam_wheel.so use_uid group=wheel"
 
+FS_CRITICAL_FILES=("/etc/passwd" "/etc/group" "/etc/shadow")
+
 declare -a WARNINGS=()
 declare -a ERRORS=()
 declare -a SAFE_ITEMS=()
@@ -147,6 +149,129 @@ data = json.loads(path.read_text(encoding='utf-8'))
 data.setdefault("apply_report", []).append(msg)
 path.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding='utf-8')
 PYJSON
+}
+
+record_manifest_irreversible_change() {
+    local msg="$1"
+    [[ -n "${MANIFEST_FILE:-}" ]] || return 0
+    (( DRY_RUN == 1 )) && return 0
+    [[ -f "$MANIFEST_FILE" ]] || return 0
+    python3 - "$MANIFEST_FILE" "$msg" <<'PYJSON'
+import sys, json, pathlib
+path = pathlib.Path(sys.argv[1])
+msg = sys.argv[2]
+data = json.loads(path.read_text(encoding='utf-8'))
+data.setdefault("irreversible_changes", []).append(msg)
+path.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding='utf-8')
+PYJSON
+}
+
+fs_expected_mode() {
+    case "$1" in
+        /etc/passwd|/etc/group) echo "644" ;;
+        /etc/shadow) echo "640" ;;
+        *) return 1 ;;
+    esac
+}
+
+fs_expected_group() {
+    case "$1" in
+        /etc/passwd|/etc/group) echo "root" ;;
+        /etc/shadow) echo "shadow" ;;
+        *) return 1 ;;
+    esac
+}
+
+fs_actual_mode() {
+    stat -c '%a' "$1"
+}
+
+fs_actual_owner_group() {
+    stat -c '%U:%G' "$1"
+}
+
+check_fs_critical_file_one() {
+    local target="$1"
+    local exp_mode exp_group actual_mode actual_og
+    exp_mode="$(fs_expected_mode "$target")" || { add_error "2.3.1 unknown target: $target"; return 1; }
+    exp_group="$(fs_expected_group "$target")" || { add_error "2.3.1 unknown target group: $target"; return 1; }
+
+    if [[ ! -e "$target" ]]; then
+        add_error "2.3.1 file not found: $target"
+        return 1
+    fi
+
+    actual_mode="$(fs_actual_mode "$target")"
+    actual_og="$(fs_actual_owner_group "$target")"
+
+    if [[ "$actual_mode" == "$exp_mode" && "$actual_og" == "root:${exp_group}" ]]; then
+        add_safe "2.3.1 compliant: $target mode=$actual_mode owner/group=$actual_og"
+    else
+        add_risky "2.3.1 non-compliant: $target expected root:${exp_group} mode=${exp_mode}, actual ${actual_og} mode=${actual_mode}"
+    fi
+}
+
+check_fs_critical_files_module() {
+    local f
+    for f in "${FS_CRITICAL_FILES[@]}"; do
+        check_fs_critical_file_one "$f"
+    done
+}
+
+apply_fs_critical_file_one() {
+    local target="$1"
+    local exp_mode exp_group actual_mode actual_og backup_path
+    exp_mode="$(fs_expected_mode "$target")" || { add_error "2.3.1 unknown target: $target"; return 1; }
+    exp_group="$(fs_expected_group "$target")" || { add_error "2.3.1 unknown target group: $target"; return 1; }
+
+    [[ -e "$target" ]] || { add_error "2.3.1 file not found: $target"; return 1; }
+
+    actual_mode="$(fs_actual_mode "$target")"
+    actual_og="$(fs_actual_owner_group "$target")"
+
+    if [[ "$actual_mode" == "$exp_mode" && "$actual_og" == "root:${exp_group}" ]]; then
+        add_safe "2.3.1 already compliant: $target"
+        record_manifest_apply_report "2.3.1 already compliant: $target"
+        return 0
+    fi
+
+    if (( DRY_RUN == 1 )); then
+        log "[DRY-RUN] backup '$target' metadata -> '$STATE_DIR/$(basename "$target").meta-$TIMESTAMP.txt'"
+        log "[DRY-RUN] chown root:${exp_group} '$target'"
+        log "[DRY-RUN] chmod ${exp_mode} '$target'"
+        add_skipped "2.3.1 dry-run: metadata would be corrected for $target"
+        return 0
+    fi
+
+    backup_path="$STATE_DIR/$(basename "$target").meta-$TIMESTAMP.txt"
+    stat "$target" > "$backup_path"
+    record_manifest_backup "$backup_path"
+
+    chown "root:${exp_group}" "$target"
+    chmod "${exp_mode}" "$target"
+
+    actual_mode="$(fs_actual_mode "$target")"
+    actual_og="$(fs_actual_owner_group "$target")"
+
+    if [[ "$actual_mode" == "$exp_mode" && "$actual_og" == "root:${exp_group}" ]]; then
+        record_manifest_modified_file "$target"
+        record_manifest_apply_report "2.3.1 corrected metadata for $target"
+        if [[ "$target" == "/etc/passwd" || "$target" == "/etc/group" || "$target" == "/etc/shadow" ]]; then
+            record_manifest_irreversible_change "2.3.1 metadata changed on $target; previous mode/ownership recorded in backup metadata only"
+        fi
+        add_safe "2.3.1 corrected: $target mode=$actual_mode owner/group=$actual_og"
+    else
+        add_error "2.3.1 verification failed after correction: $target"
+        record_manifest_warning "2.3.1 verification failed after correction: $target"
+        return 1
+    fi
+}
+
+apply_fs_critical_files_module() {
+    local f
+    for f in "${FS_CRITICAL_FILES[@]}"; do
+        apply_fs_critical_file_one "$f"
+    done
 }
 
 ssh_root_login_status() {
@@ -643,6 +768,7 @@ run_check_mode() {
     run_preflight
     check_ssh_root_login_module
     check_pam_wheel_module
+    check_fs_critical_files_module
     ensure_state_dir
     write_report
     print_report_stdout
@@ -656,6 +782,7 @@ run_apply_mode() {
 
     apply_ssh_root_login_module
     apply_pam_wheel_module
+    apply_fs_critical_files_module
 
     write_report
     print_report_stdout

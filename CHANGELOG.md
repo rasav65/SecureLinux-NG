@@ -14,6 +14,7 @@
 - `2.2.1`: restrict `su` via `pam_wheel.so use_uid group=wheel`
 - group `wheel` creation during apply if absent
 - managed block insertion into `/etc/pam.d/su`
+- `2.3.1`: check/apply owner, group and mode for `/etc/passwd`, `/etc/group`, `/etc/shadow`
 
 ### Fixed
 - dry-run summary output without reading a non-existent report file
