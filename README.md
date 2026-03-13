@@ -66,6 +66,12 @@ SecureLinux-NG — новый проект безопасной настройк
   - создаётся группа: `wheel` (если отсутствует)
   - поддержка: `--check`, `--apply`, `--apply --dry-run`
 
+- `2.2.2` — базовая sudo policy model через managed drop-in:
+  - файл: `/etc/sudoers.d/60-securelinux-ng-policy`
+  - правило: `%wheel ALL=(ALL:ALL) ALL`
+  - проверка: `visudo -cf`
+  - поддержка: `--check`, `--apply`, `--apply --dry-run`
+
 - `2.3.1` — контроль владельца/группы/прав для критичных файлов:
   - `/etc/passwd` → `root:root`, `0644`
   - `/etc/group` → `root:root`, `0644`

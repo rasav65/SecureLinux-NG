@@ -44,7 +44,7 @@
 | Пункт | Статус | Код/блок | Проверка | Комментарий |
 |---|---|---|---|---|
 | 2.2.1. Ограничить `su` через `pam_wheel.so use_uid` и группу `wheel` | partial | `check_pam_wheel_module()` / `apply_pam_wheel_module()` | `--check`, `--apply`, наличие группы `wheel`, активное правило в `/etc/pam.d/su` | Реализован первый PAM / `su`-модуль; restore-обработчик ещё не добавлен |
-| 2.2.2. Ограничить пользователей/команды в `sudoers` | not started | — | — | В `NG` ещё нет sudo-policy-модуля |
+| 2.2.2. Ограничить пользователей/команды в `sudoers` | partial | `check_sudo_policy_module()` / `apply_sudo_policy_module()` | `--check`, `--apply`, `visudo -cf`, наличие `/etc/sudoers.d/60-securelinux-ng-policy` | Реализована базовая sudo policy model для `%wheel`; granular allowlist-команды ещё не добавлены |
 
 ## 2.3. Настройка прав доступа к объектам файловой системы
 

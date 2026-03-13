@@ -36,6 +36,9 @@ PAM_WHEEL_BLOCK_BEGIN="# BEGIN SecureLinux-NG 2.2.1"
 PAM_WHEEL_BLOCK_END="# END SecureLinux-NG 2.2.1"
 PAM_WHEEL_LINE="auth required pam_wheel.so use_uid group=wheel"
 
+SUDO_POLICY_DROPIN="/etc/sudoers.d/60-securelinux-ng-policy"
+SUDO_POLICY_CONTENT=$'# Managed by SecureLinux-NG\n%wheel ALL=(ALL:ALL) ALL\n'
+
 FS_CRITICAL_FILES=("/etc/passwd" "/etc/group" "/etc/shadow")
 
 declare -a WARNINGS=()
@@ -274,6 +277,90 @@ apply_fs_critical_files_module() {
     done
 }
 
+sudo_policy_status() {
+    if [[ -f "$SUDO_POLICY_DROPIN" ]]; then
+        if grep -Eq '^[[:space:]]*%wheel[[:space:]]+ALL=\(ALL:ALL\)[[:space:]]+ALL[[:space:]]*$' "$SUDO_POLICY_DROPIN"; then
+            echo "configured"
+            return 0
+        fi
+        echo "conflict"
+        return 0
+    fi
+    echo "absent"
+}
+
+check_sudo_policy_module() {
+    local status
+    status="$(sudo_policy_status)"
+
+    case "$status" in
+        configured)
+            add_safe "2.2.2 sudo policy enforced via drop-in: $SUDO_POLICY_DROPIN"
+            ;;
+        absent)
+            add_risky "2.2.2 sudo policy is not enforced yet: missing $SUDO_POLICY_DROPIN"
+            ;;
+        conflict)
+            add_risky "2.2.2 sudo policy drop-in exists but content differs from managed policy: $SUDO_POLICY_DROPIN"
+            ;;
+        *)
+            add_error "2.2.2 sudo policy status detection failed"
+            ;;
+    esac
+}
+
+apply_sudo_policy_module() {
+    local status
+    status="$(sudo_policy_status)"
+
+    case "$status" in
+        configured)
+            add_safe "2.2.2 sudo policy already configured: $SUDO_POLICY_DROPIN"
+            record_manifest_apply_report "2.2.2 already compliant: $SUDO_POLICY_DROPIN"
+            return 0
+            ;;
+        absent|conflict)
+            ;;
+        *)
+            add_error "2.2.2 sudo policy status detection failed during apply"
+            return 1
+            ;;
+    esac
+
+    if (( DRY_RUN == 1 )); then
+        log "[DRY-RUN] mkdir -p '/etc/sudoers.d'"
+        if [[ -f "$SUDO_POLICY_DROPIN" ]]; then
+            log "[DRY-RUN] backup '$SUDO_POLICY_DROPIN' -> '$STATE_DIR/$(basename "$SUDO_POLICY_DROPIN").bak-$TIMESTAMP'"
+        fi
+        log "[DRY-RUN] write '$SUDO_POLICY_DROPIN' with managed sudo policy for %wheel"
+        log "[DRY-RUN] chmod 440 '$SUDO_POLICY_DROPIN'"
+        log "[DRY-RUN] visudo -cf '$SUDO_POLICY_DROPIN'"
+        add_skipped "2.2.2 dry-run: sudo policy drop-in would be written"
+        return 0
+    fi
+
+    mkdir -p /etc/sudoers.d
+
+    if [[ -f "$SUDO_POLICY_DROPIN" ]]; then
+        local backup_path="$STATE_DIR/$(basename "$SUDO_POLICY_DROPIN").bak-$TIMESTAMP"
+        cp -a "$SUDO_POLICY_DROPIN" "$backup_path"
+        record_manifest_backup "$backup_path"
+    fi
+
+    printf '%s' "$SUDO_POLICY_CONTENT" > "$SUDO_POLICY_DROPIN"
+    chmod 440 "$SUDO_POLICY_DROPIN"
+
+    if visudo -cf "$SUDO_POLICY_DROPIN" >/dev/null 2>&1; then
+        record_manifest_modified_file "$SUDO_POLICY_DROPIN"
+        record_manifest_apply_report "2.2.2 enforced via $SUDO_POLICY_DROPIN"
+        add_safe "2.2.2 sudo policy enforced via drop-in: $SUDO_POLICY_DROPIN"
+    else
+        add_error "2.2.2 visudo validation failed for $SUDO_POLICY_DROPIN"
+        record_manifest_warning "2.2.2 visudo validation failed for $SUDO_POLICY_DROPIN"
+        return 1
+    fi
+}
+
 ssh_root_login_status() {
     if [[ -f "$SSH_ROOT_LOGIN_DROPIN" ]]; then
         if grep -Eq '^[[:space:]]*PermitRootLogin[[:space:]]+no[[:space:]]*$' "$SSH_ROOT_LOGIN_DROPIN"; then
@@ -469,7 +556,7 @@ PYJSON
 require_cmds() {
     local missing=()
     local cmd
-    for cmd in bash python3 stat uname grep awk date mkdir cat systemctl; do
+    for cmd in bash python3 stat uname grep awk date mkdir cat systemctl visudo; do
         command -v "$cmd" >/dev/null 2>&1 || missing+=("$cmd")
     done
     (( ${#missing[@]} == 0 )) || die "Отсутствуют обязательные команды: ${missing[*]}"
@@ -768,6 +855,7 @@ run_check_mode() {
     run_preflight
     check_ssh_root_login_module
     check_pam_wheel_module
+    check_sudo_policy_module
     check_fs_critical_files_module
     ensure_state_dir
     write_report
@@ -782,6 +870,7 @@ run_apply_mode() {
 
     apply_ssh_root_login_module
     apply_pam_wheel_module
+    apply_sudo_policy_module
     apply_fs_critical_files_module
 
     write_report
