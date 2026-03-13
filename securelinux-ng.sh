@@ -56,6 +56,7 @@ SYSTEMD_ETC_DIR="/etc/systemd/system"
 SYSTEMD_UNIT_SUFFIXES=("service" "socket" "timer" "mount" "path" "target" "slice")
 
 RUNTIME_PATHS_SAMPLE_LIMIT=20
+SUDO_COMMANDS_SAMPLE_LIMIT=20
 
 declare -a WARNINGS=()
 declare -a ERRORS=()
@@ -321,6 +322,78 @@ for item, reason in samples:
 PYJSON
 }
 
+check_sudo_command_paths_module() {
+    python3 - <<'PYJSON'
+from pathlib import Path
+import os, re, stat
+
+sample_limit = 20
+sudo_files = [Path("/etc/sudoers")]
+sudoers_d = Path("/etc/sudoers.d")
+if sudoers_d.is_dir():
+    sudo_files.extend(sorted(p for p in sudoers_d.iterdir() if p.is_file()))
+
+paths = []
+seen = set()
+token_re = re.compile(r'(/[A-Za-z0-9_./+-]+)')
+
+for cfg in sudo_files:
+    try:
+        text = cfg.read_text(encoding="utf-8", errors="ignore")
+    except Exception:
+        continue
+    for line in text.splitlines():
+        s = line.strip()
+        if not s or s.startswith("#"):
+            continue
+        for m in token_re.findall(s):
+            path = os.path.realpath(m)
+            if path.startswith("/") and os.path.exists(path) and path not in seen:
+                seen.add(path)
+                paths.append(path)
+
+ok = 0
+risky = 0
+samples = []
+
+for item in sorted(paths):
+    try:
+        st = os.stat(item)
+    except Exception:
+        continue
+
+    reasons = []
+    if os.path.isfile(item) and stat.S_IMODE(st.st_mode) & 0o022:
+        reasons.append("file_go_w")
+
+    cur = Path(item).parent
+    while True:
+        try:
+            dst = os.stat(cur)
+            if stat.S_IMODE(dst.st_mode) & 0o022:
+                reasons.append(f"parent_go_w:{cur}")
+                break
+        except Exception:
+            reasons.append(f"parent_stat_failed:{cur}")
+            break
+
+        if cur == cur.parent:
+            break
+        cur = cur.parent
+
+    if reasons:
+        risky += 1
+        if len(samples) < sample_limit:
+            samples.append((item, ",".join(reasons)))
+    else:
+        ok += 1
+
+print(f"SUMMARY\t{len(paths)}\t{ok}\t{risky}")
+for item, reason in samples:
+    print(f"RISK\t{item}\t{reason}")
+PYJSON
+}
+
 apply_runtime_paths_module() {
     if (( DRY_RUN == 1 )); then
         while IFS=$'\t' read -r kind a b c; do
@@ -341,6 +414,39 @@ apply_runtime_paths_module() {
     add_warning "2.3.2 apply is policy-gated: current version performs detection only, without automatic chmod/chown for runtime paths"
     record_manifest_warning "2.3.2 apply is policy-gated: detection only"
     add_skipped "2.3.2 apply skipped: detection only"
+}
+
+record_sudo_command_check_results() {
+    local total="$1"
+    local ok="$2"
+    local risky="$3"
+    if [[ "$risky" == "0" ]]; then
+        add_safe "2.3.4 sudo command paths checked: total=$total ok=$ok risky=$risky"
+    else
+        add_risky "2.3.4 sudo command paths checked: total=$total ok=$ok risky=$risky"
+    fi
+}
+
+apply_sudo_command_paths_module() {
+    if (( DRY_RUN == 1 )); then
+        while IFS=$'\t' read -r kind a b c; do
+            [[ -n "${kind:-}" ]] || continue
+            case "$kind" in
+                SUMMARY)
+                    log "[DRY-RUN] 2.3.4 sudo command scan total=$a ok=$b risky=$c"
+                    ;;
+                RISK)
+                    log "[DRY-RUN] 2.3.4 would review '$a' reason='$b'"
+                    ;;
+            esac
+        done < <(check_sudo_command_paths_module)
+        add_skipped "2.3.4 dry-run: sudo command path remediation is policy-gated"
+        return 0
+    fi
+
+    add_warning "2.3.4 apply is policy-gated: current version performs detection only, without automatic chmod/chown for sudo command paths"
+    record_manifest_warning "2.3.4 apply is policy-gated: detection only"
+    add_skipped "2.3.4 apply skipped: detection only"
 }
 
 resolve_restore_manifest() {
@@ -1448,6 +1554,7 @@ fstec_items = [
     {"item": "2.2.2", "status": "partial", "restore": "managed-file", "module": "sudo_policy"},
     {"item": "2.3.1", "status": "partial", "restore": "metadata-snapshot", "module": "fs_critical_files"},
     {"item": "2.3.2", "status": "partial", "restore": "policy-gated-detect-only", "module": "runtime_paths"},
+    {"item": "2.3.4", "status": "partial", "restore": "policy-gated-detect-only", "module": "sudo_command_paths"},
     {"item": "2.3.3", "status": "partial", "restore": "metadata-snapshot", "module": "cron_targets"},
     {"item": "2.3.5", "status": "partial", "restore": "metadata-snapshot", "module": "systemd_targets"},
 ]
@@ -1504,8 +1611,8 @@ print_report_stdout() {
         echo "requires_confirmed_policy: ${#POLICY_GATES[@]}"
         echo "warnings: ${#WARNINGS[@]}"
         echo "errors: ${#ERRORS[@]}"
-        echo "fstec_items: 7"
-        echo "fstec_partial: 7"
+        echo "fstec_items: 8"
+        echo "fstec_partial: 8"
         echo "fstec_done: 0"
         return 0
     fi
@@ -1555,6 +1662,17 @@ run_check_mode() {
                 ;;
         esac
     done < <(check_runtime_paths_module)
+    while IFS=$'	' read -r kind a b c; do
+        [[ -n "${kind:-}" ]] || continue
+        case "$kind" in
+            SUMMARY)
+                record_sudo_command_check_results "$a" "$b" "$c"
+                ;;
+            RISK)
+                add_risky "2.3.4 sudo command path: $a reason=$b"
+                ;;
+        esac
+    done < <(check_sudo_command_paths_module)
     check_cron_targets_module
     check_systemd_unit_targets_module
     ensure_state_dir
@@ -1573,6 +1691,7 @@ run_apply_mode() {
     apply_sudo_policy_module
     apply_fs_critical_files_module
     apply_runtime_paths_module
+    apply_sudo_command_paths_module
     apply_cron_targets_module
     apply_systemd_unit_targets_module
 

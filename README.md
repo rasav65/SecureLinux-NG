@@ -85,6 +85,13 @@ SecureLinux-NG — новый проект безопасной настройк
   - проверяется отсутствие `group/other write` у родительских директорий
   - текущий статус: `check` + policy-gated detect-only в `apply`
 
+- `2.3.4` — контроль прав для файлов/команд, встречающихся в `sudoers`:
+  - сканируются `/etc/sudoers` и `/etc/sudoers.d/*`
+  - извлекаются абсолютные пути команд
+  - проверяется отсутствие `group/other write` на самом файле
+  - проверяется отсутствие `group/other write` у родительских директорий
+  - текущий статус: `check` + policy-gated detect-only в `apply`
+
 - `2.3.3` — контроль владельца/группы/прав для cron-целей:
   - `/etc/crontab` → `root:root`, `0600`
   - `/etc/cron.d` → `root:root`, `0700`

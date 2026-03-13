@@ -35,13 +35,14 @@ EOF
 ./securelinux-ng.sh --apply --dry-run --config "$TMP_CONFIG" >/dev/null &&
 ./securelinux-ng.sh --report --config "$TMP_CONFIG" >/dev/null &&
 ./securelinux-ng.sh --restore --manifest "$TMP_MANIFEST" --config "$TMP_CONFIG" >/dev/null &&
-./securelinux-ng.sh --apply --dry-run --config "$TMP_CONFIG" | grep -q 'fstec_items: 7' &&
-./securelinux-ng.sh --apply --dry-run --config "$TMP_CONFIG" | grep -q 'fstec_partial: 7' &&
+./securelinux-ng.sh --apply --dry-run --config "$TMP_CONFIG" | grep -q 'fstec_items: 8' &&
+./securelinux-ng.sh --apply --dry-run --config "$TMP_CONFIG" | grep -q 'fstec_partial: 8' &&
 ./securelinux-ng.sh --check --config "$TMP_CONFIG" | grep -q '2.1.2' &&
 ./securelinux-ng.sh --check --config "$TMP_CONFIG" | grep -q '2.2.1' &&
 ./securelinux-ng.sh --check --config "$TMP_CONFIG" | grep -q '2.2.2' &&
 ./securelinux-ng.sh --check --config "$TMP_CONFIG" | grep -q '2.3.1' &&
 ./securelinux-ng.sh --check --config "$TMP_CONFIG" | grep -q '2.3.2' &&
+./securelinux-ng.sh --check --config "$TMP_CONFIG" | grep -q '2.3.4' &&
 ./securelinux-ng.sh --check --config "$TMP_CONFIG" | grep -q '2.3.3' &&
 ./securelinux-ng.sh --check --config "$TMP_CONFIG" | grep -q '2.3.5'
 

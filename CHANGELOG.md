@@ -28,6 +28,7 @@
 - extend smoke test with `--restore --manifest` path
 - add smoke assertions for FSTEC summary in stdout
 - `2.3.2`: add runtime executable/library permissions scan with policy-gated detect-only apply
+- `2.3.4`: add sudo command paths permissions scan with policy-gated detect-only apply
 
 ### Fixed
 - fix unset shell variable in `2.3.2` dry-run summary output
