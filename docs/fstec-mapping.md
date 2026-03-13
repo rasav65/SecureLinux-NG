@@ -62,11 +62,11 @@
 |---|---|---|---|---|
 | 2.4.1. Ограничить доступ к журналу ядра (`kernel.dmesg_restrict=1`) | partial | `sysctl_kernel_check_module()` / `apply_sysctl_kernel_module()` | `--check`, `--apply`, `sysctl -n kernel.dmesg_restrict`, managed drop-in | Реализован в составе базового sysctl-модуля |
 | 2.4.2. Скрыть ядерные адреса (`kernel.kptr_restrict=2`) | partial | `sysctl_kernel_check_module()` / `apply_sysctl_kernel_module()` | `--check`, `--apply`, `sysctl -n kernel.kptr_restrict`, managed drop-in | Реализован в составе базового sysctl-модуля |
-| 2.4.3. `init_on_alloc=1` | not started | — | — | Требует отдельного GRUB/boot-params модуля |
-| 2.4.4. `slab_nomerge` | not started | — | — | Требует отдельного GRUB/boot-params модуля |
-| 2.4.5. `iommu=force iommu.strict=1 iommu.passthrough=0` | not started | — | — | Требует отдельного GRUB/boot-params модуля |
-| 2.4.6. `randomize_kstack_offset=1` | not started | — | — | Требует отдельного GRUB/boot-params модуля |
-| 2.4.7. `mitigations=auto,nosmt` | not started | — | — | Требует отдельного GRUB/boot-params модуля |
+| 2.4.3. `init_on_alloc=1` | partial | `grub_kernel_params_check_module()` / `apply_grub_kernel_params_module()` | `--check`, анализ `/proc/cmdline` | Реализован audit/detect-only модуль без автоматической правки GRUB |
+| 2.4.4. `slab_nomerge` | partial | `grub_kernel_params_check_module()` / `apply_grub_kernel_params_module()` | `--check`, анализ `/proc/cmdline` | Реализован audit/detect-only модуль без автоматической правки GRUB |
+| 2.4.5. `iommu=force iommu.strict=1 iommu.passthrough=0` | partial | `grub_kernel_params_check_module()` / `apply_grub_kernel_params_module()` | `--check`, анализ `/proc/cmdline` | Реализован audit/detect-only модуль без автоматической правки GRUB |
+| 2.4.6. `randomize_kstack_offset=1` | partial | `grub_kernel_params_check_module()` / `apply_grub_kernel_params_module()` | `--check`, анализ `/proc/cmdline` | Реализован audit/detect-only модуль без автоматической правки GRUB |
+| 2.4.7. `mitigations=auto,nosmt` | partial | `grub_kernel_params_check_module()` / `apply_grub_kernel_params_module()` | `--check`, анализ `/proc/cmdline` | Реализован audit/detect-only модуль без автоматической правки GRUB |
 | 2.4.8. Защита eBPF JIT (`net.core.bpf_jit_harden=2`) | partial | `sysctl_kernel_check_module()` / `apply_sysctl_kernel_module()` | `--check`, `--apply`, `sysctl -n net.core.bpf_jit_harden`, managed drop-in | Реализован в составе базового sysctl-модуля |
 
 ## 2.5. Уменьшение периметра атаки ядра Linux

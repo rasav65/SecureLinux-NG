@@ -114,6 +114,15 @@ SecureLinux-NG — новый проект безопасной настройк
   - managed drop-in: `/etc/sysctl.d/60-securelinux-ng-kernel.conf`
   - поддержка: `--check`, `--apply`, `--apply --dry-run`, `--restore`
 
+- `2.4.3`, `2.4.4`, `2.4.5`, `2.4.6`, `2.4.7` — audit/detect-only GRUB kernel params module:
+  - `init_on_alloc=1`
+  - `slab_nomerge`
+  - `iommu=force iommu.strict=1 iommu.passthrough=0`
+  - `randomize_kstack_offset=1`
+  - `mitigations=auto,nosmt`
+  - источник проверки: `/proc/cmdline`
+  - текущий статус: `check` + policy-gated detect-only в `apply`
+
 ## Restore
 
 Сейчас `--restore` умеет:

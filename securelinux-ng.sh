@@ -61,6 +61,16 @@ SYSTEMD_UNIT_SUFFIXES=("service" "socket" "timer" "mount" "path" "target" "slice
 RUNTIME_PATHS_SAMPLE_LIMIT=20
 SUDO_COMMANDS_SAMPLE_LIMIT=20
 
+GRUB_KERNEL_REQUIRED_PARAMS=(
+    "init_on_alloc=1"
+    "slab_nomerge"
+    "iommu=force"
+    "iommu.strict=1"
+    "iommu.passthrough=0"
+    "randomize_kstack_offset=1"
+    "mitigations=auto,nosmt"
+)
+
 declare -a WARNINGS=()
 declare -a ERRORS=()
 declare -a SAFE_ITEMS=()
@@ -480,6 +490,69 @@ record_sysctl_kernel_check_results() {
     else
         add_risky "2.4 sysctl kernel protections checked: total=$total ok=$ok risky=$risky"
     fi
+}
+
+grub_kernel_params_check_module() {
+    python3 - <<'PYJSON'
+from pathlib import Path
+
+required = [
+    "init_on_alloc=1",
+    "slab_nomerge",
+    "iommu=force",
+    "iommu.strict=1",
+    "iommu.passthrough=0",
+    "randomize_kstack_offset=1",
+    "mitigations=auto,nosmt",
+]
+
+cmdline = Path("/proc/cmdline").read_text(encoding="utf-8", errors="ignore").strip()
+tokens = cmdline.split()
+
+ok = 0
+risky = 0
+for item in required:
+    if item in tokens:
+        ok += 1
+    else:
+        risky += 1
+        print(f"RISK\t{item}\tmissing_in_proc_cmdline")
+
+print(f"SUMMARY\t{len(required)}\t{ok}\t{risky}")
+PYJSON
+}
+
+record_grub_kernel_params_check_results() {
+    local total="$1"
+    local ok="$2"
+    local risky="$3"
+    if [[ "$risky" == "0" ]]; then
+        add_safe "2.4 grub kernel params checked: total=$total ok=$ok risky=$risky"
+    else
+        add_risky "2.4 grub kernel params checked: total=$total ok=$ok risky=$risky"
+    fi
+}
+
+apply_grub_kernel_params_module() {
+    if (( DRY_RUN == 1 )); then
+        while IFS=$'\t' read -r kind a b c; do
+            [[ -n "${kind:-}" ]] || continue
+            case "$kind" in
+                SUMMARY)
+                    log "[DRY-RUN] 2.4 grub params scan total=$a ok=$b risky=$c"
+                    ;;
+                RISK)
+                    log "[DRY-RUN] 2.4 would review missing kernel param '$a' reason='$b'"
+                    ;;
+            esac
+        done < <(grub_kernel_params_check_module)
+        add_skipped "2.4 dry-run: GRUB kernel params remediation is policy-gated"
+        return 0
+    fi
+
+    add_warning "2.4 apply for GRUB kernel params is policy-gated: current version performs detection only, without automatic update of /etc/default/grub"
+    record_manifest_warning "2.4 apply for GRUB kernel params is policy-gated: detection only"
+    add_skipped "2.4 apply skipped for GRUB kernel params: detection only"
 }
 
 apply_sysctl_kernel_module() {
@@ -1656,6 +1729,11 @@ fstec_items = [
     {"item": "2.3.4", "status": "partial", "restore": "policy-gated-detect-only", "module": "sudo_command_paths"},
     {"item": "2.4.1", "status": "partial", "restore": "managed-file", "module": "kernel_dmesg_restrict"},
     {"item": "2.4.2", "status": "partial", "restore": "managed-file", "module": "kernel_kptr_restrict"},
+    {"item": "2.4.3", "status": "partial", "restore": "policy-gated-detect-only", "module": "grub_init_on_alloc"},
+    {"item": "2.4.4", "status": "partial", "restore": "policy-gated-detect-only", "module": "grub_slab_nomerge"},
+    {"item": "2.4.5", "status": "partial", "restore": "policy-gated-detect-only", "module": "grub_iommu_hardening"},
+    {"item": "2.4.6", "status": "partial", "restore": "policy-gated-detect-only", "module": "grub_randomize_kstack_offset"},
+    {"item": "2.4.7", "status": "partial", "restore": "policy-gated-detect-only", "module": "grub_mitigations"},
     {"item": "2.4.8", "status": "partial", "restore": "managed-file", "module": "kernel_bpf_jit_harden"},
     {"item": "2.3.3", "status": "partial", "restore": "metadata-snapshot", "module": "cron_targets"},
     {"item": "2.3.5", "status": "partial", "restore": "metadata-snapshot", "module": "systemd_targets"},
@@ -1713,8 +1791,8 @@ print_report_stdout() {
         echo "requires_confirmed_policy: ${#POLICY_GATES[@]}"
         echo "warnings: ${#WARNINGS[@]}"
         echo "errors: ${#ERRORS[@]}"
-        echo "fstec_items: 11"
-        echo "fstec_partial: 11"
+        echo "fstec_items: 16"
+        echo "fstec_partial: 16"
         echo "fstec_done: 0"
         return 0
     fi
@@ -1786,6 +1864,17 @@ run_check_mode() {
                 ;;
         esac
     done < <(sysctl_kernel_check_module)
+    while IFS=$'	' read -r kind a b c; do
+        [[ -n "${kind:-}" ]] || continue
+        case "$kind" in
+            SUMMARY)
+                record_grub_kernel_params_check_results "$a" "$b" "$c"
+                ;;
+            RISK)
+                add_risky "2.4 grub kernel param: $a reason=$b"
+                ;;
+        esac
+    done < <(grub_kernel_params_check_module)
     check_cron_targets_module
     check_systemd_unit_targets_module
     ensure_state_dir
@@ -1806,6 +1895,7 @@ run_apply_mode() {
     apply_runtime_paths_module
     apply_sudo_command_paths_module
     apply_sysctl_kernel_module
+    apply_grub_kernel_params_module
     apply_cron_targets_module
     apply_systemd_unit_targets_module
 
