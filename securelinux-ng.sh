@@ -40,6 +40,14 @@ SUDO_POLICY_DROPIN="/etc/sudoers.d/60-securelinux-ng-policy"
 SUDO_POLICY_CONTENT=$'# Managed by SecureLinux-NG\n%wheel ALL=(ALL:ALL) ALL\n'
 
 FS_CRITICAL_FILES=("/etc/passwd" "/etc/group" "/etc/shadow")
+CRON_CRITICAL_TARGETS=(
+    "/etc/crontab:file:600:root:root"
+    "/etc/cron.d:dir:700:root:root"
+    "/etc/cron.hourly:dir:700:root:root"
+    "/etc/cron.daily:dir:700:root:root"
+    "/etc/cron.weekly:dir:700:root:root"
+    "/etc/cron.monthly:dir:700:root:root"
+)
 
 declare -a WARNINGS=()
 declare -a ERRORS=()
@@ -274,6 +282,123 @@ apply_fs_critical_files_module() {
     local f
     for f in "${FS_CRITICAL_FILES[@]}"; do
         apply_fs_critical_file_one "$f"
+    done
+}
+
+cron_target_mode() {
+    echo "$1" | awk -F: '{print $3}'
+}
+
+cron_target_owner() {
+    echo "$1" | awk -F: '{print $4}'
+}
+
+cron_target_group() {
+    echo "$1" | awk -F: '{print $5}'
+}
+
+cron_target_path() {
+    echo "$1" | awk -F: '{print $1}'
+}
+
+cron_target_type() {
+    echo "$1" | awk -F: '{print $2}'
+}
+
+check_cron_target_one() {
+    local spec="$1" path type exp_mode exp_owner exp_group actual_mode actual_og
+    path="$(cron_target_path "$spec")"
+    type="$(cron_target_type "$spec")"
+    exp_mode="$(cron_target_mode "$spec")"
+    exp_owner="$(cron_target_owner "$spec")"
+    exp_group="$(cron_target_group "$spec")"
+
+    if [[ ! -e "$path" ]]; then
+        add_risky "2.3.3 cron target missing: $path"
+        return 0
+    fi
+
+    if [[ "$type" == "file" && ! -f "$path" ]]; then
+        add_risky "2.3.3 cron target type mismatch: expected file, got $path"
+        return 0
+    fi
+    if [[ "$type" == "dir" && ! -d "$path" ]]; then
+        add_risky "2.3.3 cron target type mismatch: expected dir, got $path"
+        return 0
+    fi
+
+    actual_mode="$(stat -c '%a' "$path")"
+    actual_og="$(stat -c '%U:%G' "$path")"
+
+    if [[ "$actual_mode" == "$exp_mode" && "$actual_og" == "${exp_owner}:${exp_group}" ]]; then
+        add_safe "2.3.3 compliant: $path mode=$actual_mode owner/group=$actual_og"
+    else
+        add_risky "2.3.3 non-compliant: $path expected ${exp_owner}:${exp_group} mode=${exp_mode}, actual ${actual_og} mode=${actual_mode}"
+    fi
+}
+
+check_cron_targets_module() {
+    local spec
+    for spec in "${CRON_CRITICAL_TARGETS[@]}"; do
+        check_cron_target_one "$spec"
+    done
+}
+
+apply_cron_target_one() {
+    local spec="$1" path exp_mode exp_owner exp_group actual_mode actual_og backup_path
+    path="$(cron_target_path "$spec")"
+    exp_mode="$(cron_target_mode "$spec")"
+    exp_owner="$(cron_target_owner "$spec")"
+    exp_group="$(cron_target_group "$spec")"
+
+    if [[ ! -e "$path" ]]; then
+        add_risky "2.3.3 skipped missing cron target: $path"
+        return 0
+    fi
+
+    actual_mode="$(stat -c '%a' "$path")"
+    actual_og="$(stat -c '%U:%G' "$path")"
+
+    if [[ "$actual_mode" == "$exp_mode" && "$actual_og" == "${exp_owner}:${exp_group}" ]]; then
+        add_safe "2.3.3 already compliant: $path"
+        record_manifest_apply_report "2.3.3 already compliant: $path"
+        return 0
+    fi
+
+    if (( DRY_RUN == 1 )); then
+        log "[DRY-RUN] backup '$path' metadata -> '$STATE_DIR/$(basename "$path").meta-$TIMESTAMP.txt'"
+        log "[DRY-RUN] chown ${exp_owner}:${exp_group} '$path'"
+        log "[DRY-RUN] chmod ${exp_mode} '$path'"
+        add_skipped "2.3.3 dry-run: cron target metadata would be corrected for $path"
+        return 0
+    fi
+
+    backup_path="$STATE_DIR/$(basename "$path").meta-$TIMESTAMP.txt"
+    stat "$path" > "$backup_path"
+    record_manifest_backup "$backup_path"
+
+    chown "${exp_owner}:${exp_group}" "$path"
+    chmod "${exp_mode}" "$path"
+
+    actual_mode="$(stat -c '%a' "$path")"
+    actual_og="$(stat -c '%U:%G' "$path")"
+
+    if [[ "$actual_mode" == "$exp_mode" && "$actual_og" == "${exp_owner}:${exp_group}" ]]; then
+        record_manifest_modified_file "$path"
+        record_manifest_apply_report "2.3.3 corrected metadata for $path"
+        record_manifest_irreversible_change "2.3.3 metadata changed on $path; previous mode/ownership recorded in backup metadata only"
+        add_safe "2.3.3 corrected: $path mode=$actual_mode owner/group=$actual_og"
+    else
+        add_error "2.3.3 verification failed after correction: $path"
+        record_manifest_warning "2.3.3 verification failed after correction: $path"
+        return 1
+    fi
+}
+
+apply_cron_targets_module() {
+    local spec
+    for spec in "${CRON_CRITICAL_TARGETS[@]}"; do
+        apply_cron_target_one "$spec"
     done
 }
 
@@ -857,6 +982,7 @@ run_check_mode() {
     check_pam_wheel_module
     check_sudo_policy_module
     check_fs_critical_files_module
+    check_cron_targets_module
     ensure_state_dir
     write_report
     print_report_stdout
@@ -872,6 +998,7 @@ run_apply_mode() {
     apply_pam_wheel_module
     apply_sudo_policy_module
     apply_fs_critical_files_module
+    apply_cron_targets_module
 
     write_report
     print_report_stdout

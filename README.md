@@ -77,3 +77,12 @@ SecureLinux-NG — новый проект безопасной настройк
   - `/etc/group` → `root:root`, `0644`
   - `/etc/shadow` → `root:shadow`, `0640`
   - поддержка: `--check`, `--apply`, `--apply --dry-run`
+
+- `2.3.3` — контроль владельца/группы/прав для cron-целей:
+  - `/etc/crontab` → `root:root`, `0600`
+  - `/etc/cron.d` → `root:root`, `0700`
+  - `/etc/cron.hourly` → `root:root`, `0700`
+  - `/etc/cron.daily` → `root:root`, `0700`
+  - `/etc/cron.weekly` → `root:root`, `0700`
+  - `/etc/cron.monthly` → `root:root`, `0700`
+  - поддержка: `--check`, `--apply`, `--apply --dry-run`
